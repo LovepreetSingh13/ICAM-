@@ -14,12 +14,12 @@ class TrainOptions():
         # data loader related
         self.parser.add_argument('--dataroot', type=str, default='./datasets' ,
                                  help='path to data')
-        self.parser.add_argument('--data_type', type=str, default= 'syn2d' , choices=['syn2d', 'biobank_age', 'dhcp_2d' , 'syn2d_crossval', 'biobank_age_crossval', 'dhcp_2d_crossval'] ,
+        self.parser.add_argument('--data_type', type=str, default= 'syn2d' , choices=['syn2d', 'biobank_age', 'dhcp_2d' ,'lung_tb_2d', 'syn2d_crossval', 'biobank_age_crossval', 'dhcp_2d_crossval' , 'lung_tb_2d_crossval'] ,
                                  help='data to load' 
                                       'options: syn2d [128, 128]'
                                       'biobank_age [128, 160, 128]'
                                       'dhcp [128, 128]' 
-                                      'add more dataloaders here')
+                                      'lung_tb_2d [128,128]')
         self.parser.add_argument('--cross_validation', type=bool, default=False, help='wheter to use cross validation (5 kfolds to split data)')
         self.parser.add_argument('--data_dim', type=str, default='2d', choices=['2d', '3d'],
                                  help='whether to load 2d or 3d networks. Options: 2d, 3d')
