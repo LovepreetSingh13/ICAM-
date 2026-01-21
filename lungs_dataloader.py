@@ -2,6 +2,12 @@
 # Converted at: 2026-01-21T08:21:46.573Z
 # Next step (optional): refactor into modules & generate tests with RunCell
 # Quick start: pip install runcell
+import os
+import torch
+import numpy as np
+from PIL import Image
+from torch.utils.data import Dataset
+
 
 class LungTBDataset2D(torch.utils.data.Dataset):
     def __init__(self, root_dir, transform=None):
