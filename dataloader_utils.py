@@ -299,31 +299,31 @@ def train_val_test_split_dhcp(ds, val_split=0.1, test_split=0.1, random_seed=Non
 
     dslen = len(ds)
     subj_count = dslen / 10 # 10 slices for each patient
-    
+
     indices_subs = list(range(0,dslen,10)) # 10 slices per subject
     np.random.shuffle(indices_subs)
-    
+
     list_shuff_subs = []
     np.random.shuffle(indices_subs)
     for ind in indices_subs:
         i = 0
         for value in range(10):
             list_shuff_subs.append(ind+i)
-            i += 1 
-    
+            i += 1
+
     #size of sets
     val_size = int(subj_count * val_split) # will be in subjects (*10 to get slices)
     test_size = int(subj_count * test_split)
     train_size = int(subj_count - val_size - test_size)
-    
+
     train_size_slices = train_size * 10
     val_size_slices = val_size * 10
     test_size_slices = test_size * 10
-    
+
     train_mapping = list_shuff_subs[:train_size_slices]
     val_mapping = list_shuff_subs[train_size_slices : train_size_slices + val_size_slices]
     test_mapping = list_shuff_subs[train_size_slices + val_size_slices : train_size_slices + val_size_slices + test_size_slices]
-    
+
     train = GenHelper(ds, train_size_slices, train_mapping)
     val = GenHelper(ds, val_size_slices, val_mapping)
     test = GenHelper(ds, test_size_slices, test_mapping)
@@ -367,34 +367,34 @@ def train_valid_split_dhcp(ds, split_fold=0.1, random_seed=None):
 
     dslen = len(ds)
     subj_count = dslen / 10 # 10 slices for each patient
-    
-    indices_subs = list(range(0,dslen,10)) 
+
+    indices_subs = list(range(0,dslen,10))
     np.random.shuffle(indices_subs)
-    
+
     list_shuff_subs = []
     np.random.shuffle(indices_subs)
     for ind in indices_subs:
         i = 0
         for value in range(10):
             list_shuff_subs.append(ind+i)
-            i += 1 
-    
-    
+            i += 1
+
+
     list_shuff_subs = []
     np.random.shuffle(indices_subs)
-    
+
     for ind in indices_subs:
         i = 0
         for value in range(10):
             list_shuff_subs.append(ind+i)
-            i += 1 
-    
+            i += 1
+
     valid_size = int(subj_count * split_fold) # will be in subjects (*10 to get slices)
     val_size_slices = valid_size * 10
-    
+
     train_mapping = list_shuff_subs[val_size_slices:]
     valid_mapping = list_shuff_subs[:val_size_slices]
-    
+
     train = GenHelper(ds, dslen - val_size_slices, train_mapping)
     valid = GenHelper(ds, val_size_slices, valid_mapping)
 
@@ -440,11 +440,104 @@ def init_synth_dataloader_crossval(opt, anomaly, mode='train', batch_size=2):
     if mode == 'test':
     	dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size,
                                              shuffle=True, drop_last=True)
-    	return dataloader 
-    
-    
-    elif mode == 'train': 
-        return dataset 
+    	return dataloader
+
+
+    elif mode == 'train':
+        return dataset
+
+def init_lung_tb_dataloader(opt, shuffle_test=False):
+    """
+    Initialize Lung TB dataset and dataloaders
+    """
+
+    healthy_dataset = LungTBDataset2D(
+        image_path=opt.dataroot,
+        class_label=0,
+        transform=None
+    )
+
+    anomaly_dataset = LungTBDataset2D(
+        image_path=opt.dataroot,
+        class_label=1,
+        transform=None
+    )
+
+    def split_dataset(dataset):
+        n = len(dataset)
+        n_val = int(0.1 * n)
+        n_test = int(0.1 * n)
+        n_train = n - n_val - n_test
+        return random_split(dataset, [n_train, n_val, n_test])
+
+    healthy_train, healthy_val, healthy_test = split_dataset(healthy_dataset)
+    anomaly_train, anomaly_val, anomaly_test = split_dataset(anomaly_dataset)
+
+    healthy_dataloader_train = DataLoader(
+        healthy_train, batch_size=opt.batch_size // 2, shuffle=True
+    )
+    healthy_dataloader_val = DataLoader(
+        healthy_val, batch_size=opt.batch_size // 2, shuffle=True
+    )
+    healthy_dataloader_test = DataLoader(
+        healthy_test, batch_size=opt.batch_size // 2, shuffle=shuffle_test
+    )
+
+    anomaly_dataloader_train = DataLoader(
+        anomaly_train, batch_size=opt.batch_size // 2, shuffle=True
+    )
+    anomaly_dataloader_val = DataLoader(
+        anomaly_val, batch_size=opt.batch_size // 2, shuffle=True
+    )
+    anomaly_dataloader_test = DataLoader(
+        anomaly_test, batch_size=opt.batch_size // 2, shuffle=shuffle_test
+    )
+
+    return (
+        healthy_dataloader_train,
+        healthy_dataloader_val,
+        healthy_dataloader_test,
+        anomaly_dataloader_train,
+        anomaly_dataloader_val,
+        anomaly_dataloader_test,
+    )
+
+
+def init_lung_tb_dataloader_crossval(opt, shuffle_test=False):
+    """
+    Cross-validation Lung TB loader
+    """
+
+    healthy_dataset = LungTBDataset2D(
+        image_path=opt.dataroot,
+        class_label=0,
+        transform=None
+    )
+
+    anomaly_dataset = LungTBDataset2D(
+        image_path=opt.dataroot,
+        class_label=1,
+        transform=None
+    )
+
+    def train_test_split(dataset, test_ratio=0.1):
+        n = len(dataset)
+        n_test = int(test_ratio * n)
+        n_train = n - n_test
+        return random_split(dataset, [n_train, n_test])
+
+    healthy_train, healthy_test = train_test_split(healthy_dataset)
+    anomaly_train, anomaly_test = train_test_split(anomaly_dataset)
+
+    healthy_test_dataloader = DataLoader(
+        healthy_test, batch_size=opt.batch_size // 2, shuffle=shuffle_test
+    )
+    anomaly_test_dataloader = DataLoader(
+        anomaly_test, batch_size=opt.batch_size // 2, shuffle=shuffle_test
+    )
+
+    return healthy_train, healthy_test_dataloader, anomaly_train, anomaly_test_dataloader
+
 
 
 def init_biobank_age_dataloader(opt, shuffle_test=False):
@@ -563,7 +656,7 @@ def init_biobank_age_dataloader_crossval(opt, shuffle_test=False):
                                                                          random_seed=opt.random_seed)  #90/10 for train/test
     anomaly_dataset_train, anomaly_dataset_test = train_valid_split(anomaly_train, split_fold=0.1,
                                                                          random_seed=opt.random_seed) #90/10 for train/test
-    
+
     print('Full Train healthy data length in fold: ', len(healthy_dataset_train), 'Test data hold-out length: ',len(healthy_dataset_test))
     print('Full Train anomaly data length in fold: ', len(anomaly_dataset_train), 'Test data hold-out length: ',len(anomaly_dataset_test))
 
@@ -588,7 +681,7 @@ def init_dhcp_dataloader_2d_crossval(opt, shuffle_test=False):
 
     if opt.resize_image:
         transforms.append(ResizeImage(image_size=opt.resize_size))
-        
+
 
     if opt.aug_rician_noise:
         transforms.append(RicianNoise(noise_level=opt.aug_rician_noise))
@@ -614,14 +707,14 @@ def init_dhcp_dataloader_2d_crossval(opt, shuffle_test=False):
                          transform=transforms)
 
     healthy_dataset_train, healthy_dataset_test = train_valid_split_dhcp(healthy_train, split_fold=0.1,
-                                                                         random_seed=opt.random_seed)  
+                                                                         random_seed=opt.random_seed)
     anomaly_dataset_train, anomaly_dataset_test = train_valid_split_dhcp(anomaly_train, split_fold=0.1,
-                                                                         random_seed=opt.random_seed) 
+                                                                         random_seed=opt.random_seed)
 
 
     print('Full Train healthy data length in fold: ', len(healthy_dataset_train), 'Test data hold-out length: ',len(healthy_dataset_test))
     print('Full Train anomaly data length in fold: ', len(anomaly_dataset_train), 'Test data hold-out length: ',len(anomaly_dataset_test))
-    
+
     healthy_dataloader_test = torch.utils.data.DataLoader(healthy_dataset_test, batch_size=opt.batch_size//2,
                                                          shuffle=shuffle_test)
     anomaly_dataloader_test = torch.utils.data.DataLoader(anomaly_dataset_test, batch_size=opt.batch_size//2,
@@ -690,5 +783,3 @@ def init_dhcp_dataloader_2d(opt, shuffle_test=False):
                                                          shuffle=shuffle_test)
 
     return healthy_dataloader_train, healthy_dataloader_val, healthy_dataloader_test, anomaly_dataloader_train, anomaly_dataloader_val, anomaly_dataloader_test
-
-
