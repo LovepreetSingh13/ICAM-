@@ -8,7 +8,7 @@ from torch.utils.data import Dataset
 from synthetic_dataloader import *
 import torchvision.transforms as transforms
 from skimage.transform import resize
-from biobank_dataloader import *
+from lungs_dataloader import *
 from dhcp_dataloader import *
 import torchvision
 import SimpleITK as sitk
