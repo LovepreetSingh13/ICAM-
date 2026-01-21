@@ -74,7 +74,7 @@ def main():
 
     print('\n--- load dataset ---')
     # can add option for new dataloaders here
-    # dataloaders for data without cross validation 
+    # dataloaders for data without cross validation
     if opts.data_type == 'syn2d':
         healthy_dataloader, healthy_val_dataloader, healthy_test_dataloader, \
         anomaly_dataloader, anomaly_val_dataloader, anomaly_test_dataloader = _load_dataloader(opts)
@@ -84,7 +84,11 @@ def main():
     elif opts.data_type == 'dhcp_2d':
         healthy_dataloader, healthy_val_dataloader, healthy_test_dataloader, \
         anomaly_dataloader, anomaly_val_dataloader, anomaly_test_dataloader = init_dhcp_dataloader_2d(opts)
-        
+    elif opts.data_type == 'lung_tb_2d':
+      healthy_dataloader, healthy_val_dataloader, healthy_test_dataloader, \
+      anomaly_dataloader, anomaly_val_dataloader, anomaly_test_dataloader = init_lung_tb_dataloader(opts)
+
+
     # dataloaders for cross validation
     elif opts.data_type == 'syn2d_crossval':
         dataset_train_healthy, healthy_test_dataloader, \
@@ -95,6 +99,9 @@ def main():
     elif opts.data_type == 'dhcp_2d_crossval':
         dataset_train_healthy, healthy_test_dataloader, \
         dataset_train_anomaly, anomaly_test_dataloader = init_dhcp_dataloader_2d_crossval(opts)
+    elif opts.data_type == 'lung_tb_2d_crossval':
+        dataset_train_healthy, healthy_test_dataloader, \
+        dataset_train_anomaly, anomaly_test_dataloader = init_lung_tb_dataloader_crossval(opts)
 
     # =========================================================================
     # # train without cross-validation
@@ -107,19 +114,19 @@ def main():
         model.set_scheduler(opts, last_ep=ep0)
         save_opts = vars(opts)
         saver = Saver(opts)
-        
+
         if not os.path.exists(opts.results_path):
             os.makedirs(opts.results_path)
-        
+
         with open(opts.results_path + '/parameters.json', 'w') as file:
             json.dump(save_opts, file, indent=4, sort_keys=True)
-        
+
         print('\n--- train ---')
         for ep in range(ep0, opts.n_ep):
             healthy_data_iter = iter(healthy_dataloader)
             anomaly_data_iter = iter(anomaly_dataloader)
             iter_counter = 0
-        
+
             while iter_counter < len(anomaly_dataloader) and iter_counter < len(healthy_dataloader):
                 # output of iter dataloader: [tensor image, tensor label (regression), tensor mask]
                 healthy_images, healthy_label_reg, healthy_mask = healthy_data_iter.next()
@@ -131,30 +138,30 @@ def main():
                 images = torch.cat((healthy_images, anomaly_images), dim=0).type(torch.FloatTensor)
                 c_org = torch.cat((healthy_c_org, anomaly_c_org), dim=0).type(torch.FloatTensor)
                 label_reg = torch.cat((healthy_label_reg, anomaly_label_reg), dim=0).type(torch.FloatTensor)
-        
+
                 if len(healthy_mask.size()) > 2:
                     mask = torch.cat((healthy_mask, anomaly_mask), dim=0).type(torch.FloatTensor)
                     mask = mask.to(opts.device).detach()
                 else:
                     mask = None
-        
+
                 iter_counter += 1
                 if images.size(0) != opts.batch_size:
                     continue
-        
+
                 # input data
                 images = images.to(opts.device).detach()
                 c_org = c_org.to(opts.device).detach()
                 label_reg = label_reg.to(opts.device).detach()
-        
+
                 # update model
                 if (iter_counter % opts.d_iter) != 0 and iter_counter < len(anomaly_dataloader) - opts.d_iter:
                     model.update_D_content(opts, images, c_org)
                     continue
-        
+
                 model.update_D(opts, images, c_org, label_reg, mask=mask)
                 model.update_EG(opts)
-        
+
                 if ((total_it + 1) % opts.train_print_it) == 0:
                     train_accuracy, train_f1, _, _ = model.classification_scores(images, c_org)
                     if opts.regression:
@@ -164,38 +171,38 @@ def main():
                 elif total_it % opts.display_freq == 0:
                     saver.write_img(ep, total_it, model)
                 total_it += 1
-        
+
                 # save to tensorboard
                 saver.write_display(total_it, model)
-        
+
                 time_elapsed = time.time() - t0
                 hours, rem = divmod(time_elapsed, 3600)
                 minutes, seconds = divmod(rem, 60)
-        
+
                 if (total_it % opts.train_print_it) == 0:
                     print('Total it: {:d} (ep {:d}, it {:d}), Accuracy: {:.2f}, F1 score: {:.2f}, '
                           'Elapsed time: {:0>2}:{:0>2}:{:05.2f}'
                           .format(total_it, ep, iter_counter, train_accuracy, train_f1, int(hours), int(minutes), seconds))
-        
+
             # save model
             if ep % opts.model_save_freq == 0:
                 saver.write_model(ep, total_it, 0, model, epoch=True)
                 saver.write_img(ep, total_it, model)
-        
+
             # example validation
             try:
                 _validation(opts, model, healthy_val_dataloader, anomaly_val_dataloader)
             except Exception as e:
                 print(f'Encountered error during validation - {e}')
                 raise e
-        
+
         # example test
         try:
             _test(opts, model, healthy_test_dataloader, anomaly_test_dataloader)
         except Exception as e:
             print(f'Encountered error during test - {e}')
             raise e
-        
+
         # save last model
         saver.write_model(ep, total_it, iter_counter, model, model_name='model_last')
         saver.write_img(ep, total_it, model)
@@ -204,45 +211,45 @@ def main():
     # train with cross-validation
     # =========================================================================
     elif (opts.cross_validation == True):
-        # For Cross Validation 
+        # For Cross Validation
         kfold = KFold(n_splits=KFOLDS, shuffle=True, random_state=RANDOM_SEED) #creates 5 folds
-        
-        # Save final test results across all folds 
+
+        # Save final test results across all folds
         test_results_mae = {}
         test_results_mse = {}
         test_results_acc = {}
         test_results_f1 = {}
-        
+
         # K-fold Cross Validation model evaluation
         for fold, ((train_ids_healthy, val_ids_healthy), (train_ids_anomal, val_ids_anomal) ) in enumerate(zip(kfold.split(dataset_train_healthy), kfold.split(dataset_train_anomaly))):
-        
+
             print('--------------------------------')
             print(f'FOLD {fold}')
             print('--------------------------------')
-                    
+
             train_subsampler_healthy = torch.utils.data.SubsetRandomSampler(train_ids_healthy)
-            val_subsampler_healthy = torch.utils.data.SubsetRandomSampler(val_ids_healthy) 
-            
+            val_subsampler_healthy = torch.utils.data.SubsetRandomSampler(val_ids_healthy)
+
             train_subsampler_anomal = torch.utils.data.SubsetRandomSampler(train_ids_anomal)
-            val_subsampler_anomal = torch.utils.data.SubsetRandomSampler(val_ids_anomal) 
-            
+            val_subsampler_anomal = torch.utils.data.SubsetRandomSampler(val_ids_anomal)
+
             print('Train Healthy len subset: ' + str(len(train_subsampler_healthy)))
             print('Val Healthy len subset: ' + str(len(val_subsampler_healthy)))
-            
+
             print('Train Anomaly len subset: ' + str(len(train_subsampler_anomal)))
             print('Val Anomaly len subset: ' + str(len(val_subsampler_anomal)))
-            
-            
+
+
             healthy_dataloader = torch.utils.data.DataLoader(dataset_train_healthy, batch_size=2//2,
                                                            sampler=train_subsampler_healthy)
             healthy_val_dataloader = torch.utils.data.DataLoader(dataset_train_healthy, batch_size=2//2,
                                                          sampler=val_subsampler_healthy)
-            
+
             anomaly_dataloader = torch.utils.data.DataLoader(dataset_train_anomaly, batch_size=2//2,
                                                         sampler=train_subsampler_anomal)
             anomaly_val_dataloader = torch.utils.data.DataLoader(dataset_train_anomaly, batch_size=2//2,
                                                          sampler=val_subsampler_anomal)
-        
+
             print('\n--- load model ---')
             model = ICAM(opts)
             model.setgpu(opts.device)
@@ -250,19 +257,19 @@ def main():
             model.set_scheduler(opts, last_ep=ep0)
             save_opts = vars(opts)
             saver = Saver(opts)
-        
+
             if not os.path.exists(opts.results_path):
                 os.makedirs(opts.results_path)
-        
+
             with open(opts.results_path + '/parameters_fold' + str(fold) + '.json', 'w') as file:
                 json.dump(save_opts, file, indent=4, sort_keys=True)
-        
+
             print('\n--- train ---')
             for ep in range(ep0, opts.n_ep):
                 healthy_data_iter = iter(healthy_dataloader)
                 anomaly_data_iter = iter(anomaly_dataloader)
                 iter_counter = 0
-        
+
                 while iter_counter < len(anomaly_dataloader) and iter_counter < len(healthy_dataloader):
                     # output of iter dataloader: [tensor image, tensor label (regression), tensor mask]
                     healthy_images, healthy_label_reg, healthy_mask = healthy_data_iter.next()
@@ -274,30 +281,30 @@ def main():
                     images = torch.cat((healthy_images, anomaly_images), dim=0).type(torch.FloatTensor)
                     c_org = torch.cat((healthy_c_org, anomaly_c_org), dim=0).type(torch.FloatTensor)
                     label_reg = torch.cat((healthy_label_reg, anomaly_label_reg), dim=0).type(torch.FloatTensor)
-        
+
                     if len(healthy_mask.size()) > 2:
                         mask = torch.cat((healthy_mask, anomaly_mask), dim=0).type(torch.FloatTensor)
                         mask = mask.to(opts.device).detach()
                     else:
                         mask = None
-        
+
                     iter_counter += 1
                     if images.size(0) != opts.batch_size:
                         continue
-        
+
                     # input data
                     images = images.to(opts.device).detach()
                     c_org = c_org.to(opts.device).detach()
                     label_reg = label_reg.to(opts.device).detach()
-        
+
                     # update model
                     if (iter_counter % opts.d_iter) != 0 and iter_counter < len(anomaly_dataloader) - opts.d_iter:
                         model.update_D_content(opts, images, c_org)
                         continue
-        
+
                     model.update_D(opts, images, c_org, label_reg, mask=mask)
                     model.update_EG(opts)
-        
+
                     if ((total_it + 1) % opts.train_print_it) == 0:
                         train_accuracy, train_f1, _, _ = model.classification_scores(images, c_org)
                         if opts.regression:
@@ -307,19 +314,19 @@ def main():
                     elif total_it % opts.display_freq == 0:
                         saver.write_img(ep, total_it, model)
                     total_it += 1
-        
+
                     # save to tensorboard
                     saver.write_display(total_it, model)
-        
+
                     time_elapsed = time.time() - t0
                     hours, rem = divmod(time_elapsed, 3600)
                     minutes, seconds = divmod(rem, 60)
-        
+
                     if (total_it % opts.train_print_it) == 0:
                         print('Total it: {:d} (ep {:d}, it {:d}), Accuracy: {:.2f}, F1 score: {:.2f}, '
                               'Elapsed time: {:0>2}:{:0>2}:{:05.2f}'
                               .format(total_it, ep, iter_counter, train_accuracy, train_f1, int(hours), int(minutes), seconds))
-                    
+
                 # Validation - each epoch during training fold
                 print('Performing validation inside fold.....')
                 try:
@@ -327,36 +334,36 @@ def main():
                 except Exception as e:
                     print(f'Encountered error during validation - {e}')
                     raise e
-        
+
                 # Save model end of fold
                 if ep % opts.model_save_freq == 0:
                     saver.write_model(ep, total_it, 0, model, epoch=True)
                     saver.write_img(ep, total_it, model)
-        
-        
-            print('Ended training in fold - starting test with hold-out data.....')    
+
+
+            print('Ended training in fold - starting test with hold-out data.....')
             # Test - using hold-out test set at the end of training fold
             try:
                 mae_test, mse_test, acc_test, f1_test = _test_crossval(opts, model, healthy_test_dataloader, anomaly_test_dataloader, fold)
             except Exception as e:
                 print(f'Encountered error during test - {e}')
                 raise e
-            
+
             # Save test results
             test_results_mae[fold] = mae_test
             test_results_mse[fold] = mse_test
             test_results_acc[fold] = acc_test
             test_results_f1[fold] = f1_test
-        
+
             # save last model for fold
             saver.write_model(ep, total_it, iter_counter, model, model_name='model_last_' + str(fold))
             saver.write_img(ep, total_it, model)
-        
-        
+
+
         # ------- Print all fold test results ----------------------------------------------
         print(f'K-FOLD TEST RESULTS FOR {KFOLDS} FOLDS')
         print('--------------------------------')
-            
+
         # RESULTS TEST
         sum = 0.0
         list_values = []
@@ -367,7 +374,7 @@ def main():
         print(f'Average Test MAE: {sum/len(test_results_mae.items())} %')
         std_dev_mae = np.std(list_values)
         print(f'with std deviation MAE: {std_dev_mae} %')
-        
+
         sum = 0.0
         list_values = []
         for key, value in test_results_mse.items():
@@ -377,7 +384,7 @@ def main():
         print(f'Average Test MSE: {sum/len(test_results_mse.items())} %')
         std_dev_mse =  np.std(list_values)
         print(f'with std deviation MSE: {std_dev_mse} %')
-        
+
         sum = 0.0
         list_values = []
         for key, value in test_results_acc.items():
@@ -387,7 +394,7 @@ def main():
         print(f'Average Test Accuracy: {sum/len(test_results_acc.items())} %')
         std_dev_acc =  np.std(list_values)
         print(f'with std deviation Acc: {std_dev_acc} %')
-        
+
         sum = 0.0
         list_values = []
         for key, value in test_results_f1.items():
@@ -439,11 +446,11 @@ def _load_dataloader(opts):
     if opts.cross_validation == False:
     	return healthy_dataloader, healthy_val_dataloader, healthy_test_dataloader, \
            anomaly_dataloader, anomaly_val_dataloader, anomaly_test_dataloader
-           
+
     else:
     	return healthy_dataloader, healthy_test_dataloader, \
            anomaly_dataloader, anomaly_test_dataloader
-     
+
 
 
 def _validation(opts, model, healthy_val_dataloader, anomaly_val_dataloader):
@@ -704,7 +711,7 @@ def _validation_crossval(opts, model, healthy_val_dataloader, anomaly_val_datalo
     _plot_results_crossval(opts, e, fold)
     if opts.data_dim == '2d':
         _translation_example(opts, model, healthy_val_images, anomaly_val_images, 'val_images_fold_' + str(fold))
-    
+
     return val_mae[ep], val_mse[ep], val_accuracy[ep], val_f1[ep]
 
 
@@ -930,13 +937,13 @@ def _test_crossval(opts, model, healthy_test_dataloader, anomaly_test_dataloader
     # plot translation figures
     if opts.data_dim == '2d':
         _translation_example(opts, model, healthy_val_images, anomaly_val_images, 'test_images_fold' + str(fold))
-    
-    if opts.regression:    
+
+    if opts.regression:
         return val_mae, val_mse, val_accuracy, val_f1
-    
+
     elif opts.cross_corr:
         return val_accuracy, val_f1, val_cross_corr_a, val_cross_corr_b
-    
+
 
 def _translation_example(opts, model, healthy_images, anomaly_images, save_name='val_images'):
     """
@@ -1014,7 +1021,7 @@ def _translation_example(opts, model, healthy_images, anomaly_images, save_name=
         # saving for 2D inputs only
         torchvision.utils.save_image(assembled_images / 2 + 0.5, img_filename, nrow=1)
 
-        
+
 def _save_best_models(opts, model):
     """
     Save all models based on validation results
