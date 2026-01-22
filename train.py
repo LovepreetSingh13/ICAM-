@@ -38,8 +38,7 @@ def main():
 
     # initialise params
     parser = TrainOptions()
-    opts = parser.parse()
-    opts.batch_size = max(opts.batch_size, 4)  # ensures half-batch is at least 2
+    opts = parser.parse()  # ensures half-batch is at least 2
 
     opts.random_seed = RANDOM_SEED
     opts.device = opts.device if torch.cuda.is_available() and opts.gpu else 'cpu'
