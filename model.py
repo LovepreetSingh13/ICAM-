@@ -142,6 +142,9 @@ class ICAM(nn.Module):
         :return:
         """
         half_size = image.size(0) // 2
+        if half_size == 0:
+            # Not enough batch size, skip cross-correlation
+            return 0.0, 0.0
         real_A = image[0:half_size]
         real_B = image[half_size:]
         c_org_A = c_org[0:half_size]
@@ -175,7 +178,11 @@ class ICAM(nn.Module):
 
         diff_fake_A_encoded = (diff_fake_A_encoded - np.mean(diff_fake_A_encoded)) / (np.std(diff_fake_A_encoded) * len(diff_fake_A_encoded))
         diff_fake_B_encoded = (diff_fake_B_encoded - np.mean(diff_fake_B_encoded)) / (np.std(diff_fake_B_encoded) * len(diff_fake_B_encoded))
-        mask = (mask - np.mean(mask)) / (np.std(mask))
+        std = np.std(mask)
+        if std < 1e-8:
+            mask = np.zeros_like(mask)
+        else:
+            mask = (mask - np.mean(mask)) / std
         cross_corr_a = np.mean(np.correlate(diff_fake_A_encoded.flatten(), mask.flatten()))
         cross_corr_b = np.mean(np.correlate(diff_fake_B_encoded.flatten(), mask.flatten()))
         return cross_corr_a, cross_corr_b
