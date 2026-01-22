@@ -9,21 +9,41 @@ from PIL import Image
 from torch.utils.data import Dataset
 
 
+
 class LungTBDataset2D(torch.utils.data.Dataset):
-    def __init__(self, root_dir, transform=None):
-        self.samples = []
+    """
+    2D Lung TB Chest X-ray Dataset
+
+    Folder structure:
+    root_dir/
+        Normal/          -> label 0 (healthy)
+        Tuberculosis/    -> label 1 (anomaly)
+    """
+
+    def __init__(self, image_path, class_label, transform=None):
+        """
+        Args:
+            image_path (str): root dataset directory
+            class_label (int): 0 = Normal, 1 = Tuberculosis
+            transform (callable, optional): image transforms
+        """
+        self.image_path = image_path
+        self.class_label = class_label
         self.transform = transform
+        self.samples = []
 
-        normal_dir = os.path.join(root_dir, "Normal")
-        tb_dir = os.path.join(root_dir, "Tuberculosis")
+        if class_label == 0:
+            data_dir = os.path.join(image_path, "Normal")
+            label = 0
+        else:
+            data_dir = os.path.join(image_path, "Tuberculosis")
+            label = 1
 
-        for img in os.listdir(normal_dir):
+        for img in sorted(os.listdir(data_dir)):
             if img.lower().endswith(".png"):
-                self.samples.append((os.path.join(normal_dir, img), 0))
-
-        for img in os.listdir(tb_dir):
-            if img.lower().endswith(".png"):
-                self.samples.append((os.path.join(tb_dir, img), 1))
+                self.samples.append(
+                    (os.path.join(data_dir, img), label)
+                )
 
     def __len__(self):
         return len(self.samples)
@@ -31,14 +51,19 @@ class LungTBDataset2D(torch.utils.data.Dataset):
     def __getitem__(self, idx):
         img_path, label = self.samples[idx]
 
+        # Load grayscale image
         image = Image.open(img_path).convert("L")
         image = np.array(image, dtype=np.float32) / 255.0
+
+        # [1, H, W] — required by ICAM
         image = torch.from_numpy(image).unsqueeze(0)
 
         if self.transform:
             image = self.transform(image)
 
         label = torch.tensor(label).long()
+
+        # ICAM expects mask always
         mask = torch.zeros(1)
 
         return image, label, mask
