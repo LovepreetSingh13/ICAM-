@@ -15,6 +15,7 @@ import SimpleITK as sitk
 import random
 import numpy as np
 from PIL import Image
+from torch.utils.data import DataLoader, random_split
 
 
 def line_best_fit(X, Y):
