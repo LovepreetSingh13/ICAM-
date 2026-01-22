@@ -51,11 +51,10 @@ class LungTBDataset2D(torch.utils.data.Dataset):
     def __getitem__(self, idx):
         img_path, label = self.samples[idx]
 
-        # Load grayscale image
+        # ✅ REQUIRED for ICAM
         image = Image.open(img_path).convert("L")
+        image = image.resize((128, 128))          # 🔥 THIS WAS MISSING
         image = np.array(image, dtype=np.float32) / 255.0
-
-        # [1, H, W] — required by ICAM
         image = torch.from_numpy(image).unsqueeze(0)
 
         if self.transform:
