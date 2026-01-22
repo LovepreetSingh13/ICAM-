@@ -59,8 +59,8 @@ class LungTBDataset2D(torch.utils.data.Dataset):
 
         if self.transform:
             image = self.transform(image)
+        label = torch.tensor([label], dtype=torch.float32)
 
-        label = torch.tensor(label).long()
 
         # ICAM expects mask always
         mask = torch.zeros(1)
