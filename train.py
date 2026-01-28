@@ -102,7 +102,7 @@ def main():
         dataset_train_anomaly, anomaly_test_dataloader = init_dhcp_dataloader_2d_crossval(opts)
     elif opts.data_type == 'lung_tb_2d_crossval':
         dataset_train_healthy, healthy_test_dataloader, \
-        dataset_train_anomaly, anomaly_test_dataloader = init_lung_tb_dataloader_crossval(opts)
+        dataset_train_anomaly, anomaly_test_dataloader = init_lung_tb_dataloader_crossval(opts) 
 
     # =========================================================================
     # # train without cross-validation
