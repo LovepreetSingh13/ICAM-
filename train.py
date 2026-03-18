@@ -164,7 +164,7 @@ def main():
                 model.update_EG(opts)
 
                 if ((total_it + 1) % opts.train_print_it) == 0:
-                    train_accuracy, train_f1, _, _ = model.classification_scores(images, c_org)
+                    train_accuracy, train_precision, train_recall, train_specificity, train_f1, train_auc = model.classification_scores(images, c_org)
                     if opts.regression:
                         train_mse, train_mae, _ = model.regression(images, label_reg)
                 if total_it == 0:
@@ -181,9 +181,20 @@ def main():
                 minutes, seconds = divmod(rem, 60)
 
                 if (total_it % opts.train_print_it) == 0:
-                    print('Total it: {:d} (ep {:d}, it {:d}), Accuracy: {:.2f}, F1 score: {:.2f}, '
-                          'Elapsed time: {:0>2}:{:0>2}:{:05.2f}'
-                          .format(total_it, ep, iter_counter, train_accuracy, train_f1, int(hours), int(minutes), seconds))
+                    print('Total it: {:d} (ep {:d}, it {:d}) | '
+                                'Accuracy: {:.4f} | Precision: {:.4f} | Recall: {:.4f} | Specificity: {:.4f} | F1_score: {:.4f} | AUC: {:.4f} | '
+                                'Time: {:0>2}:{:0>2}:{:05.2f}'
+                                .format(
+                                    total_it, ep, iter_counter,
+                                    train_accuracy,
+                                    train_precision,
+                                    train_recall,
+                                    train_specificity,
+                                    train_f1,
+                                    train_auc,
+                                    int(hours), int(minutes), seconds
+                                )
+                            )
 
             # save model
             if ep % opts.model_save_freq == 0:
@@ -307,7 +318,7 @@ def main():
                     model.update_EG(opts)
 
                     if ((total_it + 1) % opts.train_print_it) == 0:
-                        train_accuracy, train_f1, _, _ = model.classification_scores(images, c_org)
+                        train_accuracy, train_precision, train_recall, train_specificity, train_f1, train_auc = model.classification_scores(images, c_org)
                         if opts.regression:
                             train_mse, train_mae, _ = model.regression(images, label_reg)
                     if total_it == 0:
@@ -324,9 +335,20 @@ def main():
                     minutes, seconds = divmod(rem, 60)
 
                     if (total_it % opts.train_print_it) == 0:
-                        print('Total it: {:d} (ep {:d}, it {:d}), Accuracy: {:.2f}, F1 score: {:.2f}, '
-                              'Elapsed time: {:0>2}:{:0>2}:{:05.2f}'
-                              .format(total_it, ep, iter_counter, train_accuracy, train_f1, int(hours), int(minutes), seconds))
+                        print('Total it: {:d} (ep {:d}, it {:d}) | '
+                                'Accuracy: {:.4f} | Precision: {:.4f} | Recall: {:.4f} | Specificity: {:.4f} | F1_score: {:.4f} | AUC: {:.4f} | '
+                                'Time: {:0>2}:{:0>2}:{:05.2f}'
+                                .format(
+                                    total_it, ep, iter_counter,
+                                    train_accuracy,
+                                    train_precision,
+                                    train_recall,
+                                    train_specificity,
+                                    train_f1,
+                                    train_auc,
+                                    int(hours), int(minutes), seconds
+                                )
+                            )
 
                 # Validation - each epoch during training fold
                 print('Performing validation inside fold.....')
