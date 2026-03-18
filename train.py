@@ -18,6 +18,8 @@ from torch.utils.data import ConcatDataset
 from sklearn.model_selection import KFold
 from sklearn.metrics import accuracy_score, f1_score, recall_score, precision_score, mean_absolute_error, \
     mean_squared_error
+from sklearn.metrics import confusion_matrix, roc_auc_score
+import torch.nn.functional as F
 
 torch.autograd.set_detect_anomaly(True)
 RANDOM_SEED = 8
@@ -353,11 +355,10 @@ def main():
                 # Validation - each epoch during training fold
                 print('Performing validation inside fold.....')
                 try:
-                    mae_val, mse_val, acc_val, f1_val =  _validation_crossval(opts, model, healthy_val_dataloader, anomaly_val_dataloader, fold)
+                    mae_val, mse_val, acc_val, f1_val , auc_val , spec_val =  _validation_crossval(opts, model, healthy_val_dataloader, anomaly_val_dataloader, fold)
                 except Exception as e:
                     print(f'Encountered error during validation - {e}')
                     raise e
-
                 # Save model end of fold
                 if ep % opts.model_save_freq == 0:
                     saver.write_model(ep, total_it, 0, model, epoch=True)
@@ -488,6 +489,7 @@ def _validation(opts, model, healthy_val_dataloader, anomaly_val_dataloader):
     e = np.arange(opts.n_ep)
     val_pred_temp = np.zeros((0))
     val_labels = np.zeros((0))
+    val_probs = np.zeros((0))
     if opts.regression:
         val_reg_pred_temp = np.zeros((0))
         val_reg_labels = np.zeros((0))
@@ -528,14 +530,19 @@ def _validation(opts, model, healthy_val_dataloader, anomaly_val_dataloader):
         images_val = images_val.to(opts.device).detach()
         c_org_val = c_org_val.to(opts.device).detach()
         reg_val = reg_val.to(opts.device).detach()
-        mask = mask.to(opts.device).detach()
+        if mask is not None:
+            mask = mask.to(opts.device).detach()
 
-        _, _, pred, reg_pred = model.enc_a.forward(images_val)
-        _, y_pred = torch.max(pred, 1)
+        _, _, logits, reg_pred = model.enc_a.forward(images_val)
+        probs = F.softmax(logits, dim=1)
+        y_pred = torch.argmax(probs, dim=1)
+        y_prob = probs[:, 1]   # positive class
         _, labels_temp = torch.max(c_org_val, 1)
 
         val_pred_temp = np.append(val_pred_temp, y_pred.data.cpu().numpy())
         val_labels = np.append(val_labels, labels_temp.data.cpu().numpy())
+        val_probs = np.append(val_probs, y_prob.data.cpu().numpy())
+        
         if opts.regression:
             val_reg_pred_temp = np.append(val_reg_pred_temp, reg_pred.data.cpu().numpy())
             val_reg_labels = np.append(val_reg_labels, reg_val.data.cpu().numpy())
@@ -545,24 +552,41 @@ def _validation(opts, model, healthy_val_dataloader, anomaly_val_dataloader):
             val_cross_corr_temp_a = np.append(val_cross_corr_temp_a, cross_corr_a)
             val_cross_corr_temp_b = np.append(val_cross_corr_temp_b, cross_corr_b)
 
-    val_accuracy[ep] = accuracy_score(val_pred_temp, val_labels)
-    val_f1[ep] = f1_score(val_pred_temp, val_labels, average='macro')
-    val_precision[ep] = precision_score(val_pred_temp, val_labels, average='macro')
-    val_recall[ep] = recall_score(val_pred_temp, val_labels, average='macro')
+    val_accuracy[ep] = accuracy_score(val_labels, val_pred_temp)
+    val_precision[ep] = precision_score(val_labels, val_pred_temp, zero_division=0)
+    val_recall[ep] = recall_score(val_labels, val_pred_temp, zero_division=0)
+    val_f1[ep] = f1_score(val_labels, val_pred_temp, zero_division=0)
+    
+    tn, fp, fn, tp = confusion_matrix(val_labels, val_pred_temp).ravel()
+    val_specificity = tn / (tn + fp + 1e-8)
+    
+    val_auc = roc_auc_score(val_labels, val_probs)
 
     time_elapsed = time.time() - t0
     hours, rem = divmod(time_elapsed, 3600)
     minutes, seconds = divmod(rem, 60)
 
-    print('Total it: {:d} (ep {:d}, it {:d}), Val Accuracy: {:.2f}, '
-          'Val F1 score: {:.2f}, Elapsed time: {:0>2}:{:0>2}:{:05.2f}'
-          .format(total_it, ep, iter_counter, val_accuracy[ep], val_f1[ep], int(hours), int(minutes), seconds))
-
+    print(
+    'Total it: {:d} (ep {:d}, it {:d}) | '
+    'Val Acc: {:.4f} | Prec: {:.4f} | Rec: {:.4f} | Spec: {:.4f} | F1: {:.4f} | AUC: {:.4f} | '
+    'Time: {:0>2}:{:0>2}:{:05.2f}'
+    .format(
+        total_it, ep, iter_counter,
+        val_accuracy[ep],
+        val_precision[ep],
+        val_recall[ep],
+        val_specificity,
+        val_f1[ep],
+        val_auc,
+        int(hours), int(minutes), seconds ))
+    
     if val_f1[ep] >= np.max(val_f1):
         save_opts['val_accuracy'] = np.max(val_accuracy[ep])
         save_opts['val_f1'] = np.max(val_f1[ep])
         save_opts['val_precision'] = np.max(val_precision[ep])
         save_opts['val_recall'] = np.max(val_recall[ep])
+        save_opts['val_specificity'] = np.max(val_specificity)
+        save_opts['val_auc'] = np.max(val_auc)
 
     if opts.regression:
         val_mse[ep] = mean_squared_error(val_reg_labels, val_reg_pred_temp)
@@ -618,39 +642,47 @@ def _validation_crossval(opts, model, healthy_val_dataloader, anomaly_val_datalo
     e = np.arange(opts.n_ep)
     val_pred_temp = np.zeros((0))
     val_labels = np.zeros((0))
+    val_probs = np.zeros((0))   # 🔥 NEW (for AUC)
+
     if opts.regression:
         val_reg_pred_temp = np.zeros((0))
         val_reg_labels = np.zeros((0))
+
     if opts.cross_corr:
         val_cross_corr_temp_a = np.zeros((0))
         val_cross_corr_temp_b = np.zeros((0))
+
     healthy_val_iter = iter(healthy_val_dataloader)
     anomaly_val_iter = iter(anomaly_val_dataloader)
 
-    # anomaly dataset should be the same or smaller size than healthy
     anomaly_val_dataloader_len = len(anomaly_val_dataloader)
     healthy_val_dataloader_len = len(healthy_val_dataloader)
 
     if anomaly_val_dataloader_len > healthy_val_dataloader_len:
-        raise Exception(f'anomaly dataloader len {anomaly_val_dataloader_len} is bigger than healthy dataloader'
-                        f' len {healthy_val_dataloader_len}')
+        raise Exception(f'anomaly dataloader len {anomaly_val_dataloader_len} is bigger than healthy dataloader len {healthy_val_dataloader_len}')
 
     for j in range(healthy_val_dataloader_len):
+
         if j < anomaly_val_dataloader_len:
             healthy_val_images, reg_label_healthy, _ = healthy_val_iter.next()
             anomaly_val_images, reg_label_anomaly, mask = anomaly_val_iter.next()
+
             healthy_val_c_org = torch.zeros((healthy_val_images.size(0), opts.num_domains)).to(opts.device)
             healthy_val_c_org[:, 0] = 1
+
             anomaly_val_c_org = torch.zeros((healthy_val_images.size(0), opts.num_domains)).to(opts.device)
             anomaly_val_c_org[:, 1] = 1
+
             images_val = torch.cat((healthy_val_images, anomaly_val_images), dim=0).type(torch.FloatTensor)
             c_org_val = torch.cat((healthy_val_c_org, anomaly_val_c_org), dim=0).type(torch.FloatTensor)
             reg_val = torch.cat((reg_label_healthy[0], reg_label_anomaly[0]), dim=0).type(torch.FloatTensor)
 
         else:
             healthy_val_images, reg_label_healthy, _ = healthy_val_iter.next()
+
             healthy_val_c_org = torch.zeros((healthy_val_images.size(0), opts.num_domains)).to(opts.device)
             healthy_val_c_org[:, 0] = 1
+
             images_val = healthy_val_images
             c_org_val = healthy_val_c_org
             reg_val = reg_label_healthy[0].type(torch.FloatTensor)
@@ -660,12 +692,20 @@ def _validation_crossval(opts, model, healthy_val_dataloader, anomaly_val_datalo
         reg_val = reg_val.to(opts.device).detach()
         mask = mask.to(opts.device).detach()
 
-        _, _, pred, reg_pred = model.enc_a.forward(images_val)
-        _, y_pred = torch.max(pred, 1)
+        # 🔥 MODEL OUTPUT
+        _, _, logits, reg_pred = model.enc_a.forward(images_val)
+
+        probs = F.softmax(logits, dim=1)
+        y_pred = torch.argmax(probs, dim=1)
+        y_prob = probs[:, 1]   # 🔥 for AUC
+
         _, labels_temp = torch.max(c_org_val, 1)
 
+        # 🔥 STORE VALUES
         val_pred_temp = np.append(val_pred_temp, y_pred.data.cpu().numpy())
         val_labels = np.append(val_labels, labels_temp.data.cpu().numpy())
+        val_probs = np.append(val_probs, y_prob.data.cpu().numpy())
+
         if opts.regression:
             val_reg_pred_temp = np.append(val_reg_pred_temp, reg_pred.data.cpu().numpy())
             val_reg_labels = np.append(val_reg_labels, reg_val.data.cpu().numpy())
@@ -675,24 +715,46 @@ def _validation_crossval(opts, model, healthy_val_dataloader, anomaly_val_datalo
             val_cross_corr_temp_a = np.append(val_cross_corr_temp_a, cross_corr_a)
             val_cross_corr_temp_b = np.append(val_cross_corr_temp_b, cross_corr_b)
 
-    val_accuracy[ep] = accuracy_score(val_pred_temp, val_labels)
-    val_f1[ep] = f1_score(val_pred_temp, val_labels, average='macro')
-    val_precision[ep] = precision_score(val_pred_temp, val_labels, average='macro')
-    val_recall[ep] = recall_score(val_pred_temp, val_labels, average='macro')
+    # 🔥 METRICS (CORRECT ORDER)
+    val_accuracy[ep] = accuracy_score(val_labels, val_pred_temp)
+    val_precision[ep] = precision_score(val_labels, val_pred_temp, zero_division=0)
+    val_recall[ep] = recall_score(val_labels, val_pred_temp, zero_division=0)
+    val_f1[ep] = f1_score(val_labels, val_pred_temp, zero_division=0)
 
+    tn, fp, fn, tp = confusion_matrix(val_labels, val_pred_temp).ravel()
+    val_specificity = tn / (tn + fp + 1e-8)
+
+    val_auc = roc_auc_score(val_labels, val_probs)
+
+    # 🔥 PRINT EVERYTHING
     time_elapsed = time.time() - t0
     hours, rem = divmod(time_elapsed, 3600)
     minutes, seconds = divmod(rem, 60)
 
-    print('Total it: {:d} (ep {:d}, it {:d}), Val Accuracy: {:.2f}, '
-          'Val F1 score: {:.2f}, Elapsed time: {:0>2}:{:0>2}:{:05.2f}'
-          .format(total_it, ep, iter_counter, val_accuracy[ep], val_f1[ep], int(hours), int(minutes), seconds))
+    print(
+        'Total it: {:d} (ep {:d}, it {:d}) | '
+        'Val Acc: {:.4f} | Prec: {:.4f} | Rec: {:.4f} | Spec: {:.4f} | F1: {:.4f} | AUC: {:.4f} | '
+        'Time: {:0>2}:{:0>2}:{:05.2f}'
+        .format(
+            total_it, ep, iter_counter,
+            val_accuracy[ep],
+            val_precision[ep],
+            val_recall[ep],
+            val_specificity,
+            val_f1[ep],
+            val_auc,
+            int(hours), int(minutes), seconds
+        )
+    )
 
+    # 🔥 SAVE BEST
     if val_f1[ep] >= np.max(val_f1):
-        save_opts['val_accuracy'] = np.max(val_accuracy[ep])
-        save_opts['val_f1'] = np.max(val_f1[ep])
-        save_opts['val_precision'] = np.max(val_precision[ep])
-        save_opts['val_recall'] = np.max(val_recall[ep])
+        save_opts['val_accuracy'] = val_accuracy[ep]
+        save_opts['val_f1'] = val_f1[ep]
+        save_opts['val_precision'] = val_precision[ep]
+        save_opts['val_recall'] = val_recall[ep]
+        save_opts['val_specificity'] = val_specificity
+        save_opts['val_auc'] = val_auc
 
     if opts.regression:
         val_mse[ep] = mean_squared_error(val_reg_labels, val_reg_pred_temp)
@@ -749,6 +811,7 @@ def _test(opts, model, healthy_test_dataloader, anomaly_test_dataloader):
     """
     val_pred_temp = np.zeros((0))
     val_labels = np.zeros((0))
+    val_probs = np.zeros((0))
     if opts.regression:
         val_reg_pred_temp = np.zeros((0))
         val_reg_labels = np.zeros((0))
@@ -793,11 +856,14 @@ def _test(opts, model, healthy_test_dataloader, anomaly_test_dataloader):
         mask = mask.to(opts.device).detach()
 
         _, _, pred, reg_pred = model.enc_a.forward(images_val)
-        _, y_pred = torch.max(pred, 1)
+        probs = torch.nn.functional.softmax(pred, dim=1)
+        y_pred = torch.argmax(probs, dim=1)
+        y_prob = probs[:, 1]
         _, labels_temp = torch.max(c_org_val, 1)
 
         val_pred_temp = np.append(val_pred_temp, y_pred.data.cpu().numpy())
         val_labels = np.append(val_labels, labels_temp.data.cpu().numpy())
+        val_probs = np.append(val_probs, y_prob.data.cpu().numpy())
         if opts.regression:
             val_reg_pred_temp = np.append(val_reg_pred_temp, reg_pred.data.cpu().numpy())
             val_reg_labels = np.append(val_reg_labels, reg_val.data.cpu().numpy())
@@ -807,15 +873,22 @@ def _test(opts, model, healthy_test_dataloader, anomaly_test_dataloader):
             val_cross_corr_temp_a = np.append(val_cross_corr_temp_a, cross_corr_a)
             val_cross_corr_temp_b = np.append(val_cross_corr_temp_b, cross_corr_b)
 
-    val_accuracy = accuracy_score(val_pred_temp, val_labels)
-    val_f1 = f1_score(val_pred_temp, val_labels, average='macro')
-    val_precision = precision_score(val_pred_temp, val_labels, average='macro')
-    val_recall = recall_score(val_pred_temp, val_labels, average='macro')
+    val_accuracy = accuracy_score(val_labels, val_pred_temp)
+    val_precision = precision_score(val_labels, val_pred_temp, zero_division=0)
+    val_recall = recall_score(val_labels, val_pred_temp, zero_division=0)
+    val_f1 = f1_score(val_labels, val_pred_temp, zero_division=0)
+    
+    tn, fp, fn, tp = confusion_matrix(val_labels, val_pred_temp).ravel()
+    val_specificity = tn / (tn + fp + 1e-8)
+
+    val_auc = roc_auc_score(val_labels, val_probs)
 
     save_opts['test_accuracy'] = val_accuracy
     save_opts['test_f1'] = val_f1
     save_opts['test_precision'] = val_precision
     save_opts['test_recall'] = val_recall
+    save_opts['test_auc'] = val_auc
+    save_opts['test_specificity'] = val_specificity
 
     if opts.regression:
         val_mae = mean_absolute_error(val_reg_labels, val_reg_pred_temp)
@@ -861,6 +934,7 @@ def _test_crossval(opts, model, healthy_test_dataloader, anomaly_test_dataloader
     """
     val_pred_temp = np.zeros((0))
     val_labels = np.zeros((0))
+    val_probs = np.zeros((0))
     if opts.regression:
         val_reg_pred_temp = np.zeros((0))
         val_reg_labels = np.zeros((0))
@@ -905,11 +979,14 @@ def _test_crossval(opts, model, healthy_test_dataloader, anomaly_test_dataloader
         mask = mask.to(opts.device).detach()
 
         _, _, pred, reg_pred = model.enc_a.forward(images_val)
-        _, y_pred = torch.max(pred, 1)
+        probs = torch.nn.functional.softmax(pred, dim=1)
+        y_pred = torch.argmax(probs, dim=1)
+        y_prob = probs[:, 1]
         _, labels_temp = torch.max(c_org_val, 1)
 
         val_pred_temp = np.append(val_pred_temp, y_pred.data.cpu().numpy())
         val_labels = np.append(val_labels, labels_temp.data.cpu().numpy())
+        val_probs = np.append(val_probs, y_prob.data.cpu().numpy())
         if opts.regression:
             val_reg_pred_temp = np.append(val_reg_pred_temp, reg_pred.data.cpu().numpy())
             val_reg_labels = np.append(val_reg_labels, reg_val.data.cpu().numpy())
@@ -919,15 +996,20 @@ def _test_crossval(opts, model, healthy_test_dataloader, anomaly_test_dataloader
             val_cross_corr_temp_a = np.append(val_cross_corr_temp_a, cross_corr_a)
             val_cross_corr_temp_b = np.append(val_cross_corr_temp_b, cross_corr_b)
 
-    val_accuracy = accuracy_score(val_pred_temp, val_labels)
-    val_f1 = f1_score(val_pred_temp, val_labels, average='macro')
-    val_precision = precision_score(val_pred_temp, val_labels, average='macro')
-    val_recall = recall_score(val_pred_temp, val_labels, average='macro')
+    val_accuracy = accuracy_score(val_labels, val_pred_temp)
+    val_precision = precision_score(val_labels, val_pred_temp , zero_division=0)
+    val_recall = recall_score(val_labels, val_pred_temp, zero_division=0)
+    val_f1 = f1_score(val_labels, val_pred_temp, zero_division=0)
+    tn, fp, fn, tp = confusion_matrix(val_labels, val_pred_temp).ravel()
+    val_specificity = tn / (tn + fp + 1e-8)
+    val_auc = roc_auc_score(val_labels, val_probs)
 
     save_opts['test_accuracy'] = val_accuracy
     save_opts['test_f1'] = val_f1
     save_opts['test_precision'] = val_precision
     save_opts['test_recall'] = val_recall
+    save_opts['test_auc'] = val_auc
+    save_opts['test_specificity'] = val_specificity
 
     if opts.regression:
         val_mae = mean_absolute_error(val_reg_labels, val_reg_pred_temp)
