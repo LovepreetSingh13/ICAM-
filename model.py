@@ -5,7 +5,7 @@
 # Credits: {Hsin-Ying Lee}, {2019}, {https://github.com/HsinYingLee/MDMM}
 ##################################################
 import torch.nn as nn
-from sklearn.metrics import accuracy_score, f1_score, recall_score, precision_score
+from sklearn.metrics import accuracy_score, f1_score, recall_score, precision_score, roc_auc_score, confusion_matrix
 from dataloader_utils import *
 import torch.nn.functional as F
 
@@ -98,23 +98,57 @@ class ICAM(nn.Module):
         z = torch.randn(batchSize, nz).to(self.device)
         return z
 
-    def classification_scores(self, image, c_org):
+    # def classification_scores(self, image, c_org):
+    #     """
+    #     Classification score for predictions
+    #     :param image: input image
+    #     :param c_org: class label (one hot vector)
+    #     :return:
+    #     """
+    #     _, _, E_pred_cls, _ = self.enc_a.forward(image)
+    #     _, y_pred = torch.max(E_pred_cls, 1)
+    #     _, y_true = torch.max(c_org, 1)
+    #     y_true = y_true.data.cpu().numpy()
+    #     y_pred = y_pred.data.cpu().numpy()
+    #     accuracy = accuracy_score(y_true, y_pred)
+    #     f1 = f1_score(y_true, y_pred, average='macro')
+    #     precision = precision_score(y_true, y_pred, average='macro')
+    #     recall = recall_score(y_true, y_pred, average='macro')
+    #     return accuracy, f1, precision, recall
+    # F
+
+def classification_scores(self, image, c_org):
         """
         Classification score for predictions
         :param image: input image
         :param c_org: class label (one hot vector)
         :return:
         """
-        _, _, E_pred_cls, _ = self.enc_a.forward(image)
-        _, y_pred = torch.max(E_pred_cls, 1)
-        _, y_true = torch.max(c_org, 1)
-        y_true = y_true.data.cpu().numpy()
-        y_pred = y_pred.data.cpu().numpy()
-        accuracy = accuracy_score(y_true, y_pred)
-        f1 = f1_score(y_true, y_pred, average='macro')
-        precision = precision_score(y_true, y_pred, average='macro')
-        recall = recall_score(y_true, y_pred, average='macro')
-        return accuracy, f1, precision, recall
+    _, _, E_pred_cls, _ = self.enc_a.forward(image)
+    probs = F.softmax(E_pred_cls, dim=1)
+
+    y_pred = torch.argmax(probs, dim=1)
+    y_true = torch.argmax(c_org, dim=1)
+
+    # Convert to numpy
+    y_true = y_true.detach().cpu().numpy()
+    y_pred = y_pred.detach().cpu().numpy()
+    y_prob = probs[:, 1].detach().cpu().numpy()   # positive class prob
+
+    # ✅ Standard metrics
+    accuracy = accuracy_score(y_true, y_pred)
+    precision = precision_score(y_true, y_pred)
+    recall = recall_score(y_true, y_pred)
+    f1 = f1_score(y_true, y_pred)
+
+    # ✅ Specificity
+    tn, fp, fn, tp = confusion_matrix(y_true, y_pred).ravel()
+    specificity = tn / (tn + fp + 1e-8)
+
+    # ✅ AUC
+    auc = roc_auc_score(y_true, y_prob)
+
+    return accuracy, precision, recall, specificity, f1, auc
 
     def regression(self, image, c_org):
         """
