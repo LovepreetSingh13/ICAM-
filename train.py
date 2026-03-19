@@ -551,7 +551,10 @@ def _validation(opts, model, healthy_val_dataloader, anomaly_val_dataloader):
             cross_corr_a, cross_corr_b = model.cross_correlation(images_val, mask, c_org_val)
             val_cross_corr_temp_a = np.append(val_cross_corr_temp_a, cross_corr_a)
             val_cross_corr_temp_b = np.append(val_cross_corr_temp_b, cross_corr_b)
-
+            
+    min_len = min(len(val_labels), len(val_pred_temp))
+    val_labels = val_labels[:min_len]
+    val_pred_temp = val_pred_temp[:min_len]
     val_accuracy[ep] = accuracy_score(val_labels, val_pred_temp)
     val_precision[ep] = precision_score(val_labels, val_pred_temp, zero_division=0)
     val_recall[ep] = recall_score(val_labels, val_pred_temp, zero_division=0)
