@@ -41,6 +41,9 @@ class ICAM(nn.Module):
         self.disContent_opt = torch.optim.Adam(self.disContent.parameters(), lr=opts.lr_dcontent, betas=(opts.betas[0], opts.betas[1]), weight_decay=opts.opt_weight_decay)
 
         # loss functions
+        # Add this line
+        self.device = torch.device('cuda' if opts.gpu and torch.cuda.is_available() else 'cpu')
+        
         weights = torch.tensor([1.0, 5.0]).to(self.device)  # normal, TB
         self.cls_loss = nn.BCEWithLogitsLoss(pos_weight=weights[1])
         if self.opts.lambda_l2_rec > 0:
