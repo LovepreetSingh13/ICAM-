@@ -43,9 +43,8 @@ class ICAM(nn.Module):
         # loss functions
         # Add this line
         self.device = torch.device('cuda' if opts.gpu and torch.cuda.is_available() else 'cpu')
-        
-        weights = torch.tensor([1.0, 5.0]).to(self.device)  # normal, TB
-        self.cls_loss = nn.BCEWithLogitsLoss(pos_weight=weights[1])
+         # normal, TB
+        self.cls_loss = nn.BCEWithLogitsLoss()
         if self.opts.lambda_l2_rec > 0:
             self.l2_loss = nn.MSELoss()
         if self.opts.regression:
