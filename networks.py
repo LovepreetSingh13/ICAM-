@@ -118,7 +118,7 @@ class NetGen(nn.Module):
         self.upsample = nn.Upsample(scale_factor=4)
 
     def forward(self, x, z, c):
-        z = z.view(x.size(0), 1, 8, 8)
+        z = z.view(x.size(0), 1, int(z.size(1)**0.5), int(z.size(1)**0.5))
         z_up = self.upsample(z)
         z_up = self.conv_z(z_up)
         x_c_z = torch.cat([x, z_up], 1)
