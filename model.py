@@ -374,6 +374,8 @@ class ICAM(nn.Module):
         pred_cls = self.disContent.forward(z_content.detach(), mode='cls')
 
         # goal is to classify correctlytargets = torch.argmax(c_org, dim=1)
+        targets = torch.argmax(c_org, dim=1)
+
         loss_D_content = self.cls_loss(pred_cls, targets) * self.opts.lambda_D_content_cls
         loss_D_content.backward()
         self.D_content_loss = loss_D_content.item()
