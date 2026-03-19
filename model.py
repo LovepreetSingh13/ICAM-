@@ -374,9 +374,8 @@ class ICAM(nn.Module):
         pred_cls = self.disContent.forward(z_content.detach(), mode='cls')
 
         # goal is to classify correctlytargets = torch.argmax(c_org, dim=1)
-        targets = torch.argmax(c_org, dim=1)
 
-        loss_D_content = self.cls_loss(pred_cls, targets) * self.opts.lambda_D_content_cls
+        loss_D_content = self.cls_loss(pred_cls, c_org) * self.opts.lambda_D_content_cls
         loss_D_content.backward()
         self.D_content_loss = loss_D_content.item()
         nn.utils.clip_grad_norm_(self.disContent.parameters(), 5)
@@ -430,8 +429,7 @@ class ICAM(nn.Module):
             ad_true_loss = nn.functional.binary_cross_entropy(out_real, all1)
             loss_D_gan += ad_true_loss + ad_fake_loss
 
-        targets = torch.argmax(self.c_org, dim=1)
-        loss_D_cls = self.cls_loss(pred_real_cls, targets)
+        loss_D_cls = self.cls_loss(pred_real_cls, self.c_org)
 
         loss_D_gan = self.opts.lambda_D_gan * loss_D_gan
         loss_D_cls = self.opts.lambda_cls_D * loss_D_cls
@@ -497,8 +495,7 @@ class ICAM(nn.Module):
         loss_G += loss_G_gan
 
         # classification
-        targets = torch.argmax(self.c_org, dim=1)
-        loss_G_cls = self.cls_loss(pred_fake_cls, targets) * self.opts.lambda_cls_G
+        loss_G_cls = self.cls_loss(pred_fake_cls, self.c_org) * self.opts.lambda_cls_G
         self.G_gan_cls_loss = loss_G_cls.item()
         loss_G += loss_G_cls
 
@@ -520,8 +517,7 @@ class ICAM(nn.Module):
         loss_G += loss_kl_zc + loss_kl_za
 
         # classification loss on the attribute latent space
-        targets = torch.argmax(self.c_org, dim=1)
-        loss_E_cls_self = self.cls_loss(self.E_pred_cls, targets) * self.opts.lambda_cls_E
+        loss_E_cls_self = self.cls_loss(self.E_pred_cls, self.c_org) * self.opts.lambda_cls_E
         self.E_cls_self_loss = loss_E_cls_self.item()
 
         # regression loss on E_a
@@ -558,8 +554,7 @@ class ICAM(nn.Module):
             loss_E_content = self.cls_loss(pred_cls, all1) * self.opts.lambda_E_content_cls
         else:
             # the goal is to fool discriminator- i.e. reverse the classes
-            targets = torch.argmax(1 - self.c_org, dim=1)
-            loss_E_content = self.cls_loss(pred_cls, targets) * self.opts.lambda_E_content_cls
+            loss_E_content = self.cls_loss(pred_cls, 1 - self.c_org) * self.opts.lambda_E_content_cls
         return loss_E_content
 
     def backward_G_alone(self):
@@ -575,8 +570,7 @@ class ICAM(nn.Module):
             loss_G_GAN2 += nn.functional.binary_cross_entropy(outputs_fake, all_ones)
 
         # classification
-        targets = torch.argmax(self.c_org, dim=1)
-        loss_G_cls2 = self.cls_loss(pred_fake_cls, targets) * self.opts.lambda_cls_G
+        loss_G_cls2 = self.cls_loss(pred_fake_cls, self.c_org) * self.opts.lambda_cls_G
         self.G_gan2_cls_loss = loss_G_cls2.item()
 
         loss_G_GAN2 = self.opts.lambda_G_gan * loss_G_GAN2
