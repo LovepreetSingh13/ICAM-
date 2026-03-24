@@ -61,8 +61,8 @@ class TrainOptions():
                                                                             'set -1 if no decay')
 
         # training related
-        self.parser.add_argument('--batch_size', type=int, default=2, help='train batch size')
-        self.parser.add_argument('--val_batch_size', type=int, default=2, help='val batch size')
+        self.parser.add_argument('--batch_size', type=int, default=8, help='train batch size')
+        self.parser.add_argument('--val_batch_size', type=int, default=8, help='val batch size')
         self.parser.add_argument('--n_ep', type=int, default=300, help='number of epochs')
         self.parser.add_argument('--d_iter', type=int, default=3,
                                  help='# of iterations for updating content discriminator ')
