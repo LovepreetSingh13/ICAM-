@@ -253,15 +253,15 @@ def main():
             print('Train Anomaly len subset: ' + str(len(train_subsampler_anomal)))
             print('Val Anomaly len subset: ' + str(len(val_subsampler_anomal)))
 
-
-            healthy_dataloader = torch.utils.data.DataLoader(dataset_train_healthy, batch_size=2//2,
+            # changed from hardcoded batch_size=2//2 to opts.batch_size//2
+            healthy_dataloader = torch.utils.data.DataLoader(dataset_train_healthy, batch_size=opts.batch_size//2,
                                                            sampler=train_subsampler_healthy)
-            healthy_val_dataloader = torch.utils.data.DataLoader(dataset_train_healthy, batch_size=2//2,
+            healthy_val_dataloader = torch.utils.data.DataLoader(dataset_train_healthy, batch_size=opts.batch_size//2,
                                                          sampler=val_subsampler_healthy)
 
-            anomaly_dataloader = torch.utils.data.DataLoader(dataset_train_anomaly, batch_size=2//2,
+            anomaly_dataloader = torch.utils.data.DataLoader(dataset_train_anomaly, batch_size=opts.batch_size//2,
                                                         sampler=train_subsampler_anomal)
-            anomaly_val_dataloader = torch.utils.data.DataLoader(dataset_train_anomaly, batch_size=2//2,
+            anomaly_val_dataloader = torch.utils.data.DataLoader(dataset_train_anomaly, batch_size=opts.batch_size//2,
                                                          sampler=val_subsampler_anomal)
 
             print('\n--- load model ---')
