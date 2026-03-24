@@ -1079,23 +1079,27 @@ def _translation_example(opts, model, healthy_images, anomaly_images, save_name=
     c_org_recon[:, 0] = 1
 
     images = anomaly_images.to(opts.device).detach()
-    c_org_trans = c_org_trans.to(opts.device).detach()
-    c_org_recon = c_org_recon.to(opts.device).detach()
+    # test_forward_random_group requires exactly 1 image — slice first sample
+    images_single = images[0:1]
+    c_org_trans = torch.zeros((1, opts.num_domains)).to(opts.device)
+    c_org_trans[:, 1] = 1
+    c_org_recon = torch.zeros((1, opts.num_domains)).to(opts.device)
+    c_org_recon[:, 0] = 1
 
     with torch.no_grad():
         # for group forward transfer you will need 1 image
         # for translation c_org_trans will need to be the labels of the corresponding images
         # num = number of times to sample the attribute latent space
-        output_b, diff_b_pos, diff_b_neg, diff_b_pos_std, diff_b_neg_std = model.test_forward_random_group(images,
+        output_b, diff_b_pos, diff_b_neg, diff_b_pos_std, diff_b_neg_std = model.test_forward_random_group(images_single,
                                                                                                            c_org_trans,
                                                                                                            num=100)
         # for reconstruction c_org_recon will need to be the label of the opposite class
-        output_a, diff_a_pos, diff_a_neg, diff_a_pos_std, diff_a_neg_std = model.test_forward_random_group(images,
+        output_a, diff_a_pos, diff_a_neg, diff_a_pos_std, diff_a_neg_std = model.test_forward_random_group(images_single,
                                                                                                            c_org_recon,
                                                                                                            num=100)
 
         assembled_images = torch.cat(
-            (images.cpu()[0:1, ::], output_b.cpu()[0:1, ::], diff_b_pos.cpu()[0:1, ::], diff_b_pos_std.cpu()[0:1, ::],
+            (images_single.cpu()[0:1, ::], output_b.cpu()[0:1, ::], diff_b_pos.cpu()[0:1, ::], diff_b_pos_std.cpu()[0:1, ::],
              output_a.cpu()[0:1, ::],
              diff_a_pos.cpu()[0:1, ::], diff_a_pos_std.cpu()[0:1, ::]), 3)
         # saved image: 'input_a', 'trans_image', 'trans_diff_mean',
@@ -1107,8 +1111,9 @@ def _translation_example(opts, model, healthy_images, anomaly_images, save_name=
 
         # for forward transfer images will need to be batch size 2 - of the 2 images you want to transfer
         # c_org will need to be the labels of the corresponding images
-        images = torch.cat((healthy_images, anomaly_images), dim=0).type(torch.FloatTensor)
-        c_org = torch.cat((c_org_trans, c_org_recon), dim=0).type(torch.FloatTensor)
+        # use 1 healthy and 1 anomaly image only
+        images = torch.cat((healthy_images[0:1], anomaly_images[0:1]), dim=0).type(torch.FloatTensor)
+        c_org = torch.cat((c_org_recon, c_org_trans), dim=0).type(torch.FloatTensor)
         images = images.to(opts.device).detach()
         c_org = c_org.to(opts.device).detach()
 
