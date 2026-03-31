@@ -43,7 +43,7 @@ class ICAM(nn.Module):
         # loss functions
         # Add this line
         self.device = torch.device('cuda' if opts.gpu and torch.cuda.is_available() else 'cpu')
-         # normal, TB
+        # normal, TB — pos_weight set in setgpu() after device is known
         self.cls_loss = nn.BCEWithLogitsLoss()
         if self.opts.lambda_l2_rec > 0:
             self.l2_loss = nn.MSELoss()
@@ -89,6 +89,11 @@ class ICAM(nn.Module):
         self.enc_a.to(self.device)
         self.gen.to(self.device)
         self.disContent.to(self.device)
+        # pos_weight=5.0 accounts for 5:1 class imbalance (3500 Normal vs 700 TB)
+        # set here after device is known to avoid device mismatch errors
+        self.cls_loss = nn.BCEWithLogitsLoss(
+            pos_weight=torch.tensor([5.0]).to(self.device)
+        )
 
     def _get_z_random(self, batchSize, nz, random_type='gauss'):
         """
@@ -172,7 +177,7 @@ class ICAM(nn.Module):
         :return:
         """
         _, _, _, E_pred_reg = self.enc_a.forward(image)
-        mse = F.mse_loss(E_pred_reg.detach(), c_org)
+        mse = F.mse_loss(E_pred_reg.devtach(), c_org)
         mae = F.l1_loss(E_pred_reg.detach(), c_org)
         mse = mse.cpu().numpy().astype(float)
         mae = mae.cpu().numpy().astype(float)
@@ -801,12 +806,6 @@ class ICAM(nn.Module):
         return output, diff_m_pos_mean, diff_m_neg_mean, diff_m_pos_std, diff_m_neg_std
 
     def test_interpolation(self, image, c_org=None):
-        """
-        Method for interpolating between 2 input images
-        :param image: input image - should be batch size of 2 for the 2 images for interpolation
-        :param c_org: label of images
-        :return:
-        """
         half_size = image.size(0) // 2
         image_a, image_b = torch.split(image, half_size, dim=0)
         z_content = self.enc_c.forward(image)
@@ -818,7 +817,6 @@ class ICAM(nn.Module):
         z_attr = eps.mul(std).add_(mu)
         z_attr_a, z_attr_b = torch.split(z_attr, half_size, dim=0)
 
-        # image transition
         num_interpolation = 10
         temp = torch.FloatTensor(half_size, self.nz)
         temp.copy_(z_attr_a)
@@ -877,12 +875,6 @@ class ICAM(nn.Module):
         return outputs_a, diff_map_a_pos, diff_map_a_neg, outputs_b, diff_map_b_pos, diff_map_b_neg, class_pred, reg_pred
 
     def test_forward_transfer(self, image, c_org):
-        """
-        Method for translating between 2 input images
-        :param image: input images
-        :param c_org: corresponding labels of the images
-        :return:
-        """
         half_size = image.size(0) // 2
         z_content = self.enc_c.forward(image)
         mu, logvar, _, _ = self.enc_a.forward(image)
